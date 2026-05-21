@@ -1,0 +1,105 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-llm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-llm}
+      POSTGRES_DB: ${POSTGRES_DB:-llm_logs}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-llm} -d ${POSTGRES_DB:-llm_logs}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    ports:
+      - "5433:5432"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    ports:
+      - "6380:6379"
+
+  ingestion:
+    build:
+      context: .
+      dockerfile: ingestion/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-llm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-llm}
+      POSTGRES_DB: ${POSTGRES_DB:-llm_logs}
+      REDIS_URL: redis://redis:6379
+      INGESTION_TOKEN: ${INGESTION_TOKEN:-dev-ingestion-token}
+      LOG_STREAM: ${LOG_STREAM:-inference.logs}
+      PORT: "4000"
+    ports:
+      - "4000:4000"
+
+  consumer:
+    build:
+      context: .
+      dockerfile: ingestion/Dockerfile
+    command: ["node", "src/consumer.js"]
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      ingestion: { condition: service_started }
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-llm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-llm}
+      POSTGRES_DB: ${POSTGRES_DB:-llm_logs}
+      REDIS_URL: redis://redis:6379
+      LOG_STREAM: ${LOG_STREAM:-inference.logs}
+
+  chatbot:
+    build:
+      context: .
+      dockerfile: chatbot/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:  { condition: service_healthy }
+      ingestion: { condition: service_started }
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-llm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-llm}
+      POSTGRES_DB: ${POSTGRES_DB:-llm_logs}
+      INGESTION_URL: http://ingestion:4000
+      INGESTION_TOKEN: ${INGESTION_TOKEN:-dev-ingestion-token}
+      DEFAULT_MODEL: ${DEFAULT_MODEL:-anthropic:claude-sonnet-4-20250514}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      CHATBOT_PORT: "3001"
+    ports:
+      - "3001:3001"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - chatbot
+    environment:
+      VITE_API_BASE: http://chatbot:3001
+    ports:
+      - "5173:5173"
+
+volumes:
+  pgdata:

@@ -1,0 +1,17 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: consumer, namespace: llm-logger }
+spec:
+  replicas: 2                  # consumer group dedups across replicas
+  selector: { matchLabels: { app: consumer } }
+  template:
+    metadata: { labels: { app: consumer } }
+    spec:
+      containers:
+        - name: consumer
+          image: llm-logger/ingestion:dev   # same image, different entrypoint
+          imagePullPolicy: IfNotPresent
+          command: ["node", "src/consumer.js"]
+          envFrom:
+            - configMapRef: { name: llm-logger-config }
+            - secretRef:    { name: llm-logger-secrets }

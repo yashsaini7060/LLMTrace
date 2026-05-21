@@ -1,0 +1,16 @@
+{
+  "name": "@llm-logger/chatbot",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "@llm-logger/sdk": "file:../sdk",
+    "cors": "^2.8.5",
+    "express": "^4.21.1",
+    "pg": "^8.13.1",
+    "undici": "^6.19.8"
+  }
+}

@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: llm-logger
+spec:
+  selector: { app: postgres }
+  ports: [{ port: 5432, targetPort: 5432 }]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: postgres-pvc, namespace: llm-logger }
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 5Gi } }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: postgres-init, namespace: llm-logger }
+data:
+  init.sql: |
+    -- Schema is loaded from db/init.sql via a sidecar configmap in production.
+    -- For brevity here, run db/init.sql against the cluster after the pod is up:
+    --   kubectl -n llm-logger exec -it deploy/postgres -- psql -U llm -d llm_logs < db/init.sql
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: postgres, namespace: llm-logger }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: postgres } }
+  template:
+    metadata: { labels: { app: postgres } }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          envFrom:
+            - configMapRef: { name: llm-logger-config }
+            - secretRef:    { name: llm-logger-secrets }
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: llm-logger-secrets, key: POSTGRES_PASSWORD } }
+          ports: [{ containerPort: 5432 }]
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: postgres-pvc }
