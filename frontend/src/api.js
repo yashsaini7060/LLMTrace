@@ -1,4 +1,4 @@
-const base = '';   // proxied by Vite / served by chatbot
+const base = import.meta.env.VITE_API_BASE || '';  // set VITE_API_BASE in production
 
 export async function api(path, opts = {}) {
   const res = await fetch(base + path, {
